@@ -4,6 +4,26 @@ import glob
 import requirements
 from pip._vendor import tomli
 
+def parse_potentially_invalid_json(file_content):
+    """
+    Attempt to extract and parse JSON from a given string that might contain additional
+    JavaScript or comments outside the JSON block.
+    """
+    try:
+        # Use a regex to find the first JSON object in the file
+        match = re.search(r'{.*}', file_content, re.DOTALL)  # Match the first full JSON
+        if match:
+            json_str = match.group(0)
+
+            # Try to load the extracted string as JSON
+            data = json.loads(json_str)
+            return data
+    except json.JSONDecodeError as e:
+        print(f"[-] Warning: JSON decoding failed. {e}")
+        
+    return None
+
+
 class RecoverDependencies:
     """
     Class used to parse projects and recover dependencies of a specific programming language
@@ -25,31 +45,37 @@ class RecoverDependencies:
             packages_json.append(filename)
 
         for package_json in packages_json:
-            with open(package_json,"r",encoding="utf-8") as fd:
-                content = json.loads(fd.read())
+            with open(package_json, "r", encoding="utf-8") as fd:
+                file_content = fd.read()
+                content = parse_potentially_invalid_json(file_content)
+                if not content:
+                    print(f"[-] Warning: Failed to parse {package_json}.")
+                    continue
 
             if content.get("workspaces"):
-                for custom_package in content.get("workspaces")["packages"]:
+                for custom_package in content.get("workspaces").get("packages", []):
                     for filename in glob.glob(f"{self.path}/**/{custom_package}", recursive=True):
-                        self.to_exclude.append(filename.split(custom_package.split("/")[0])[1].replace("/",""))
+                        self.to_exclude.append(filename.split(custom_package.split("/")[0])[1].replace("/", ""))
 
             if content.get("dependencies"):
                 names = content["dependencies"].keys()
                 for name in names:
                     if (self.dependencies.get(name) is None
-                        and "https" not in content["dependencies"][name]
-                        and "git" not in content["dependencies"][name]
-                        and name not in self.to_exclude):
+                            and "https" not in content["dependencies"][name]
+                            and "git" not in content["dependencies"][name]
+                            and name not in self.to_exclude):
                         self.dependencies[name] = content["dependencies"][name]
+                        print(f"[+] Found dependency: {name}@{self.dependencies[name]}")  # Print each dependency
 
-            if content.get("devDependencies"):
-                names = content["devDependencies"].keys()
-                for name in names:
-                    if (self.dependencies.get(name) is None
+        if content.get("devDependencies"):
+            names = content["devDependencies"].keys()
+            for name in names:
+                if (self.dependencies.get(name) is None
                         and "https" not in content["devDependencies"][name]
                         and "git" not in content["devDependencies"][name]
                         and name not in self.to_exclude):
-                        self.dependencies[name] = content["devDependencies"][name]
+                    self.dependencies[name] = content["devDependencies"][name]
+                    print(f"[+] Found dependency: {name}@{self.dependencies[name]}")  # Print each dependency
 
     def get_cargo_dependencies(self):
         """
