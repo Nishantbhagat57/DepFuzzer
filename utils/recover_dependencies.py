@@ -25,8 +25,12 @@ class RecoverDependencies:
             packages_json.append(filename)
 
         for package_json in packages_json:
-            with open(package_json,"r",encoding="utf-8") as fd:
-                content = json.loads(fd.read())
+            with open(package_json, "r", encoding="utf-8") as fd:
+                try:
+                    content = json.loads(fd.read())
+                except json.JSONDecodeError:
+                    print(f"[-] Warning: Failed to parse {package_json}. Invalid JSON format or empty file.")
+                    continue  # Skip this file and continue with the next
 
             if content.get("workspaces"):
                 for custom_package in content.get("workspaces")["packages"]:
